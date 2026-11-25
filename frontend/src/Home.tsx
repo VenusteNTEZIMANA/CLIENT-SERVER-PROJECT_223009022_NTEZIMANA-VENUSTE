@@ -1,11 +1,32 @@
 
-import { useState, type FormEvent } from 'react'
-import { signIn, signUp } from './lib/auth'
+import {
+  useState,
+  useEffect,
+  type FormEvent
+} from 'react'
+
+import { useNavigate } from 'react-router-dom'
+
+import {
+  signIn,
+  signUp,
+  requestPasswordReset,
+  updatePassword,
+  signOut
+} from './lib/auth'
+
+import { supabase } from './lib/supabase'
+
 import './Home.css'
 
 type AuthMode = 'login' | 'register'
 
+// ========================================
+// SOCIAL ICONS
+// ========================================
+
 function SocialIcon({ name }: { name: string }) {
+
   const common = {
     width: 23,
     height: 23,
@@ -15,6 +36,7 @@ function SocialIcon({ name }: { name: string }) {
   }
 
   switch (name) {
+
     case 'facebook':
       return (
         <svg {...common}>
@@ -25,8 +47,24 @@ function SocialIcon({ name }: { name: string }) {
     case 'instagram':
       return (
         <svg {...common}>
-          <rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="2" />
-          <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
+          <rect
+            x="3"
+            y="3"
+            width="18"
+            height="18"
+            rx="5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          />
+          <circle
+            cx="12"
+            cy="12"
+            r="4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          />
           <circle cx="18" cy="6.5" r="1.2" />
         </svg>
       )
@@ -53,74 +91,347 @@ function SocialIcon({ name }: { name: string }) {
   }
 }
 
+// ========================================
+// HOME COMPONENT
+// ========================================
+
 function Home() {
+
+  const navigate = useNavigate()
+
   const [showLogin, setShowLogin] = useState(false)
+
   const [mode, setMode] = useState<AuthMode>('login')
+
+  const [forgotPassword, setForgotPassword] = useState(false)
+
+  const [resetMode, setResetMode] = useState(false)
+
   const [email, setEmail] = useState('')
+
   const [password, setPassword] = useState('')
+
+  const [newPassword, setNewPassword] = useState('')
+
+  const [confirmPassword, setConfirmPassword] = useState('')
+
   const [loading, setLoading] = useState(false)
+
   const [feedback, setFeedback] = useState('')
+
   const [isError, setIsError] = useState(false)
 
+  // ========================================
+  // DETECT SUPABASE PASSWORD RECOVERY
+  // ========================================
+
+  useEffect(() => {
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+
+      if (event === 'PASSWORD_RECOVERY' && session) {
+
+        setResetMode(true)
+
+        setForgotPassword(false)
+
+        setShowLogin(true)
+
+        setMode('login')
+
+        setPassword('')
+
+        setNewPassword('')
+
+        setConfirmPassword('')
+
+        setFeedback('')
+
+        setIsError(false)
+      }
+
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+
+  }, [])
+
+  // ========================================
+  // OPEN LOGIN / REGISTER MODAL
+  // ========================================
+
   const openModal = (selectedMode: AuthMode) => {
+
     setMode(selectedMode)
+
     setEmail('')
+
     setPassword('')
+
+    setNewPassword('')
+
+    setConfirmPassword('')
+
+    setForgotPassword(false)
+
+    setResetMode(false)
+
     setFeedback('')
+
     setIsError(false)
+
     setShowLogin(true)
   }
 
+  // ========================================
+  // CLOSE MODAL
+  // ========================================
+
   const closeModal = () => {
+
     if (loading) return
+
     setShowLogin(false)
+
+    setForgotPassword(false)
+
+    setResetMode(false)
+
     setFeedback('')
+
+    setPassword('')
+
+    setNewPassword('')
+
+    setConfirmPassword('')
   }
+
+  // ========================================
+  // LOGIN / REGISTER
+  // ========================================
 
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>
   ) => {
+
     event.preventDefault()
 
     setLoading(true)
+
     setFeedback('')
+
     setIsError(false)
 
     try {
+
       const result =
         mode === 'login'
           ? await signIn(email.trim(), password)
           : await signUp(email.trim(), password)
 
       if (!result.success) {
+
         setIsError(true)
+
         setFeedback(result.message)
+
         return
       }
 
       setFeedback(result.message)
 
       if (mode === 'register') {
+
         setPassword('')
+
       }
+
     } catch (error) {
+
       setIsError(true)
+
       setFeedback(
         error instanceof Error
           ? error.message
           : 'Something went wrong. Please try again.'
       )
+
     } finally {
+
       setLoading(false)
+
     }
   }
 
+  // ========================================
+  // FORGOT PASSWORD
+  // ========================================
+
+  const handleForgotPassword = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+
+    event.preventDefault()
+
+    setLoading(true)
+
+    setFeedback('')
+
+    setIsError(false)
+
+    try {
+
+      const result = await requestPasswordReset(
+        email.trim()
+      )
+
+      if (!result.success) {
+
+        setIsError(true)
+
+        setFeedback(result.message)
+
+        return
+      }
+
+      setFeedback(result.message)
+
+    } catch (error) {
+
+      setIsError(true)
+
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : 'Unable to send reset link. Please try again.'
+      )
+
+    } finally {
+
+      setLoading(false)
+
+    }
+  }
+
+  // ========================================
+  // RESET PASSWORD
+  // ========================================
+
+  const handleUpdatePassword = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+
+    event.preventDefault()
+
+    setFeedback('')
+
+    setIsError(false)
+
+    if (newPassword.length < 8) {
+
+      setIsError(true)
+
+      setFeedback(
+        'Password must contain at least 8 characters.'
+      )
+
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+
+      setIsError(true)
+
+      setFeedback('Passwords do not match.')
+
+      return
+    }
+
+    setLoading(true)
+
+    try {
+
+      const result = await updatePassword(newPassword)
+
+      if (!result.success) {
+
+        setIsError(true)
+
+        setFeedback(result.message)
+
+        return
+      }
+
+      const recoveredEmail = result.user?.email || email
+
+      // Clear the recovery session
+      await signOut()
+
+      // Reset all password fields
+      setNewPassword('')
+
+      setConfirmPassword('')
+
+      setPassword('')
+
+      setEmail(recoveredEmail || '')
+
+      setForgotPassword(false)
+
+      setResetMode(false)
+
+      // Return to login
+      setMode('login')
+
+      setFeedback(
+        'Password changed successfully! Please login with your new password.'
+      )
+
+      setIsError(false)
+
+      navigate('/', { replace: true })
+
+      setShowLogin(true)
+
+    } catch (error) {
+
+      setIsError(true)
+
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : 'Unable to update password. Please try again.'
+      )
+
+    } finally {
+
+      setLoading(false)
+
+    }
+  }
+
+  // ========================================
+  // HOME PAGE UI
+  // ========================================
+
   return (
+
     <main className="home-page">
+
+      {/* NAVIGATION */}
+
       <nav className="home-nav">
+
         <a href="/" className="home-logo">
+
           <span className="home-logo-icon">✓</span>
+
           Habit<span>Tracker</span>
+
         </a>
 
         <button
@@ -129,10 +440,15 @@ function Home() {
         >
           Login
         </button>
+
       </nav>
 
+      {/* HERO SECTION */}
+
       <section className="home-hero">
+
         <div className="home-hero-content">
+
           <span className="home-eyebrow">
             YOUR JOURNEY STARTS HERE
           </span>
@@ -150,6 +466,7 @@ function Home() {
           </p>
 
           <div className="home-actions">
+
             <button
               className="home-primary-button"
               onClick={() => openModal('register')}
@@ -163,90 +480,133 @@ function Home() {
             >
               I already have an account
             </button>
+
           </div>
 
           <div className="home-benefits">
+
             <span>✓ Track your habits</span>
+
             <span>✓ Monitor your progress</span>
+
             <span>✓ Build consistency</span>
+
           </div>
+
         </div>
 
+        {/* HABIT PREVIEW */}
+
         <div className="home-visual">
+
           <div className="home-visual-card">
+
             <div className="visual-top">
+
               <div>
                 <span>YOUR DAILY ROUTINE</span>
+
                 <h3>Today's Progress</h3>
               </div>
+
               <span className="visual-check">✓</span>
+
             </div>
 
             <div className="visual-progress">
+
               <div className="visual-progress-circle">
+
                 <strong>75%</strong>
+
                 <span>Complete</span>
+
               </div>
+
             </div>
 
             <div className="visual-habit">
+
               <span className="visual-icon purple">✦</span>
+
               <div>
                 <strong>Morning Meditation</strong>
                 <small>Mindfulness</small>
               </div>
+
               <span className="visual-done">✓</span>
+
             </div>
 
             <div className="visual-habit">
+
               <span className="visual-icon blue">▤</span>
+
               <div>
                 <strong>Read 20 Pages</strong>
                 <small>Personal Growth</small>
               </div>
+
               <span className="visual-done">✓</span>
+
             </div>
 
             <div className="visual-habit">
+
               <span className="visual-icon orange">◉</span>
+
               <div>
                 <strong>Drink Water</strong>
                 <small>Health</small>
               </div>
+
               <span className="visual-pending">○</span>
+
             </div>
 
             <div className="visual-motivation">
               🔥 Keep going! Every small step counts.
             </div>
+
           </div>
+
         </div>
+
       </section>
 
-    
+      {/* FOOTER */}
 
-  {/* PROFESSIONAL THREE-COLUMN FOOTER */}
       <footer className="home-footer">
+
         <div className="footer-grid">
 
           {/* LEFT */}
+
           <div className="footer-section">
+
             <a href="/" className="home-logo">
+
               <span className="home-logo-icon">✓</span>
+
               Habit<span>Tracker</span>
+
             </a>
 
             <p>
               Build better habits, stay consistent
               and achieve your goals.
             </p>
+
           </div>
 
           {/* MIDDLE */}
+
           <div className="footer-section">
+
             <h4>Follow Us</h4>
 
             <div className="footer-socials">
+
               <a
                 href="https://www.facebook.com/"
                 target="_blank"
@@ -286,11 +646,15 @@ function Home() {
               >
                 <SocialIcon name="x" />
               </a>
+
             </div>
+
           </div>
 
           {/* RIGHT */}
+
           <div className="footer-section">
+
             <h4>Contact Support</h4>
 
             <p>
@@ -306,32 +670,53 @@ function Home() {
                 0737027451
               </a>
             </p>
+
           </div>
 
         </div>
 
+        {/* FOOTER BOTTOM */}
+
         <div className="footer-bottom">
-          <p>
-            NTEZIMANA VENUSTE | REG: 223009022
+
+          <p
+            className="footer-student-info"
+            style={{
+              fontSize: '10px',
+              opacity: 0.7,
+              marginBottom: '5px',
+            }}
+          >
+            NTEZIMANA VENUSTE | REG: 223009022 | BIT | CBE
           </p>
 
           <p>
             © {new Date().getFullYear()} HabitTracker.
             All rights reserved.
           </p>
+
         </div>
+
       </footer>
 
-      {/* LOGIN / REGISTER MODAL */}
+      {/* ================================== */}
+      {/* LOGIN / REGISTER / RESET MODAL */}
+      {/* ================================== */}
+
       {showLogin && (
+
         <div
           className="login-modal"
           onClick={closeModal}
         >
+
           <div
             className="login-modal-content"
             onClick={(event) => event.stopPropagation()}
           >
+
+            {/* CLOSE */}
+
             <button
               className="login-close"
               onClick={closeModal}
@@ -341,106 +726,318 @@ function Home() {
               ×
             </button>
 
-            <div className="login-heading-icon">✓</div>
+            <div className="login-heading-icon">
+              ✓
+            </div>
 
             <span className="home-eyebrow">
               WELCOME TO HABITTRACKER
             </span>
 
+            {/* MODAL TITLE */}
+
             <h2>
-              {mode === 'login'
-                ? 'Welcome Back'
-                : 'Create Account'}
+
+              {resetMode
+                ? 'Create New Password'
+                : forgotPassword
+                  ? 'Forgot Password?'
+                  : mode === 'login'
+                    ? 'Welcome Back'
+                    : 'Create Account'}
+
             </h2>
 
+            {/* MODAL DESCRIPTION */}
+
             <p className="login-description">
-              {mode === 'login'
-                ? 'Sign in and continue building better habits.'
-                : 'Start your journey towards a better you.'}
+
+              {resetMode
+                ? 'Create a new secure password for your account.'
+                : forgotPassword
+                  ? 'Enter your registered email address. We will send you a password reset link.'
+                  : mode === 'login'
+                    ? 'Sign in and continue building better habits.'
+                    : 'Start your journey towards a better you.'}
+
             </p>
 
-            <form onSubmit={handleSubmit}>
-              <label htmlFor="auth-email">Email Address</label>
+            {/* ================================= */}
+            {/* RESET PASSWORD FORM */}
+            {/* ================================= */}
 
-              <input
-                id="auth-email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
-                autoComplete="email"
-                required
-              />
+            {resetMode ? (
 
-              <label htmlFor="auth-password">Password</label>
+              <form onSubmit={handleUpdatePassword}>
 
-              <input
-                id="auth-password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-                autoComplete={
-                  mode === 'login'
-                    ? 'current-password'
-                    : 'new-password'
-                }
-                minLength={6}
-                required
-              />
+                <label htmlFor="new-password">
+                  New Password
+                </label>
 
-              {feedback && (
-                <div
-                  className={
-                    isError
-                      ? 'auth-feedback error'
-                      : 'auth-feedback success'
+                <input
+                  id="new-password"
+                  type="password"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(event) =>
+                    setNewPassword(event.target.value)
                   }
-                  role="status"
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+
+                <label htmlFor="confirm-password">
+                  Confirm New Password
+                </label>
+
+                <input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="Confirm your new password"
+                  value={confirmPassword}
+                  onChange={(event) =>
+                    setConfirmPassword(event.target.value)
+                  }
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+
+                {feedback && (
+
+                  <div
+                    className={
+                      isError
+                        ? 'auth-feedback error'
+                        : 'auth-feedback success'
+                    }
+                    role="status"
+                  >
+                    {feedback}
+                  </div>
+
+                )}
+
+                <button
+                  type="submit"
+                  className="home-primary-button login-submit"
+                  disabled={loading}
                 >
-                  {feedback}
-                </div>
-              )}
+                  {loading
+                    ? 'Updating...'
+                    : 'Reset Password'}
+                </button>
 
-              <button
-                type="submit"
-                className="home-primary-button login-submit"
-                disabled={loading}
-              >
-                {loading
-                  ? 'Please wait...'
-                  : mode === 'login'
-                    ? 'Login to Account'
-                    : 'Create My Account'}
-              </button>
-            </form>
+              </form>
 
-            <div className="login-switch">
-              {mode === 'login'
-                ? "Don't have an account?"
-                : 'Already have an account?'}
+            ) : forgotPassword ? (
 
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  setMode(
-                    mode === 'login' ? 'register' : 'login'
-                  )
-                  setFeedback('')
-                  setPassword('')
-                }}
-              >
-                {mode === 'login' ? 'Sign Up' : 'Login'}
-              </button>
-            </div>
+              /* ================================= */
+              /* FORGOT PASSWORD FORM */
+              /* ================================= */
+
+              <form onSubmit={handleForgotPassword}>
+
+                <label htmlFor="reset-email">
+                  Email Address
+                </label>
+
+                <input
+                  id="reset-email"
+                  type="email"
+                  placeholder="Enter your registered email"
+                  value={email}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
+                  autoComplete="email"
+                  required
+                />
+
+                {feedback && (
+
+                  <div
+                    className={
+                      isError
+                        ? 'auth-feedback error'
+                        : 'auth-feedback success'
+                    }
+                    role="status"
+                  >
+                    {feedback}
+                  </div>
+
+                )}
+
+                <button
+                  type="submit"
+                  className="home-primary-button login-submit"
+                  disabled={loading}
+                >
+                  {loading
+                    ? 'Sending...'
+                    : 'Send Reset Link'}
+                </button>
+
+                <button
+                  type="button"
+                  className="forgot-back-button"
+                  disabled={loading}
+                  onClick={() => {
+                    setForgotPassword(false)
+                    setFeedback('')
+                  }}
+                >
+                  ← Back to Login
+                </button>
+
+              </form>
+
+            ) : (
+
+              /* ================================= */
+              /* LOGIN / REGISTER FORM */
+              /* ================================= */
+
+              <form onSubmit={handleSubmit}>
+
+                <label htmlFor="auth-email">
+                  Email Address
+                </label>
+
+                <input
+                  id="auth-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
+                  autoComplete="email"
+                  required
+                />
+
+                <label htmlFor="auth-password">
+                  Password
+                </label>
+
+                <input
+                  id="auth-password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  autoComplete={
+                    mode === 'login'
+                      ? 'current-password'
+                      : 'new-password'
+                  }
+                  minLength={6}
+                  required
+                />
+
+                {/* FORGOT PASSWORD LINK */}
+
+                {mode === 'login' && (
+
+                  <div className="forgot-password-link">
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotPassword(true)
+                        setFeedback('')
+                        setIsError(false)
+                        setPassword('')
+                      }}
+                    >
+                      Forgot Password?
+                    </button>
+
+                  </div>
+
+                )}
+
+                {feedback && (
+
+                  <div
+                    className={
+                      isError
+                        ? 'auth-feedback error'
+                        : 'auth-feedback success'
+                    }
+                    role="status"
+                  >
+                    {feedback}
+                  </div>
+
+                )}
+
+                <button
+                  type="submit"
+                  className="home-primary-button login-submit"
+                  disabled={loading}
+                >
+                  {loading
+                    ? 'Please wait...'
+                    : mode === 'login'
+                      ? 'Login to Account'
+                      : 'Create My Account'}
+                </button>
+
+              </form>
+
+            )}
+
+            {/* ================================= */}
+            {/* LOGIN / REGISTER SWITCH */}
+            {/* ================================= */}
+
+            {!forgotPassword && !resetMode && (
+
+              <div className="login-switch">
+
+                {mode === 'login'
+                  ? "Don't have an account?"
+                  : 'Already have an account?'}
+
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+
+                    setMode(
+                      mode === 'login'
+                        ? 'register'
+                        : 'login'
+                    )
+
+                    setFeedback('')
+
+                    setIsError(false)
+
+                    setPassword('')
+
+                  }}
+                >
+                  {mode === 'login'
+                    ? 'Sign Up'
+                    : 'Login'}
+                </button>
+
+              </div>
+
+            )}
+
           </div>
+
         </div>
+
       )}
+
     </main>
   )
 }

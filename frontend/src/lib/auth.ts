@@ -12,11 +12,15 @@ export interface AuthResult {
 
 const API_URL = import.meta.env.VITE_API_URL
 
+// ========================================
 // SIGN UP
+// ========================================
+
 export async function signUp(
   email: string,
   password: string
 ): Promise<AuthResult> {
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -42,7 +46,8 @@ export async function signUp(
   if (!data.session) {
     return {
       success: true,
-      message: 'Account created! Please check your email and confirm your account before logging in.',
+      message:
+        'Account created! Please check your email and confirm your account before logging in.',
       user: {
         id: data.user.id,
         email: data.user.email,
@@ -50,18 +55,20 @@ export async function signUp(
     }
   }
 
-  const verification = await verifyWithDjango(
+  return verifyWithDjango(
     data.session.access_token
   )
-
-  return verification
 }
 
+// ========================================
 // LOGIN
+// ========================================
+
 export async function signIn(
   email: string,
   password: string
 ): Promise<AuthResult> {
+
   const { data, error } =
     await supabase.auth.signInWithPassword({
       email,
@@ -101,10 +108,14 @@ export async function signIn(
   }
 }
 
+// ========================================
 // VERIFY DJANGO
+// ========================================
+
 export async function verifyWithDjango(
   accessToken: string
 ): Promise<AuthResult> {
+
   try {
     const response = await fetch(
       `${API_URL}/api/auth/me/`,
@@ -134,6 +145,7 @@ export async function verifyWithDjango(
       message: 'Authentication verified.',
       user: result.user,
     }
+
   } catch {
     return {
       success: false,
@@ -143,8 +155,12 @@ export async function verifyWithDjango(
   }
 }
 
+// ========================================
 // CURRENT USER
+// ========================================
+
 export async function getCurrentUser(): Promise<AuthResult> {
+
   const {
     data: { session },
     error,
@@ -160,8 +176,74 @@ export async function getCurrentUser(): Promise<AuthResult> {
   return verifyWithDjango(session.access_token)
 }
 
+// ========================================
+// FORGOT PASSWORD
+// SEND RESET LINK TO EMAIL
+// ========================================
+
+export async function requestPasswordReset(
+  email: string
+): Promise<AuthResult> {
+
+  const { error } =
+    await supabase.auth.resetPasswordForEmail(
+      email,
+      {
+        redirectTo:
+          `${window.location.origin}/reset-password`,
+      }
+    )
+
+  if (error) {
+    return {
+      success: false,
+      message: error.message,
+    }
+  }
+
+  return {
+    success: true,
+    message:
+      'Password reset link sent! Please check your email.',
+  }
+}
+
+// ========================================
+// UPDATE PASSWORD
+// ========================================
+
+export async function updatePassword(
+  newPassword: string
+): Promise<AuthResult> {
+
+  const { data, error } =
+    await supabase.auth.updateUser({
+      password: newPassword,
+    })
+
+  if (error) {
+    return {
+      success: false,
+      message: error.message,
+    }
+  }
+
+  return {
+    success: true,
+    message: 'Password updated successfully!',
+    user: {
+      id: data.user.id,
+      email: data.user.email,
+    },
+  }
+}
+
+// ========================================
 // LOGOUT
+// ========================================
+
 export async function signOut(): Promise<void> {
+
   const { error } = await supabase.auth.signOut()
 
   if (error) {

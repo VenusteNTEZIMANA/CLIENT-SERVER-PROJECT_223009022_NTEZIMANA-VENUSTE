@@ -765,3 +765,31 @@
     padding: 25px 6% 14px;
   }
 }
+.forgot-modal-content {
+  animation: forgotModalIn 0.25s ease;
+}
+
+@keyframes forgotModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.forgot-modal-content form {
+  text-align: left;
+}
+
+.forgot-modal-content input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.forgot-modal-content .login-switch {
+  margin-top: 25px;
+}
