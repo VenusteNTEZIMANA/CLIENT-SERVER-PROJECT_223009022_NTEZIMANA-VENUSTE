@@ -1,10 +1,19 @@
 
-import { useState, type FormEvent } from 'react'
+import {
+  useState,
+  useEffect,
+  type FormEvent,
+} from 'react'
+
 import { useNavigate } from 'react-router-dom'
+
 import {
   updatePassword,
   signOut,
 } from '../lib/auth'
+
+import { supabase } from '../lib/supabase'
+
 import './ResetPassword.css'
 
 function ResetPassword() {
@@ -12,9 +21,97 @@ function ResetPassword() {
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+
   const [loading, setLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [sessionValid, setSessionValid] = useState(false)
+
   const [feedback, setFeedback] = useState('')
   const [isError, setIsError] = useState(false)
+
+  // ========================================
+  // VERIFY PASSWORD RECOVERY SESSION
+  // ========================================
+
+  useEffect(() => {
+    let mounted = true
+
+    // SUBSCRIBE TO AUTH EVENTS
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mounted) return
+
+        if (
+          event === 'PASSWORD_RECOVERY' &&
+          session
+        ) {
+          setSessionValid(true)
+          setFeedback('')
+          setIsError(false)
+          setCheckingSession(false)
+        }
+
+        if (event === 'SIGNED_OUT') {
+          setSessionValid(false)
+        }
+      }
+    )
+
+    // CHECK EXISTING SESSION
+    const checkSession = async () => {
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession()
+
+        if (!mounted) return
+
+        if (error || !session) {
+          setSessionValid(false)
+          setIsError(true)
+          setFeedback(
+            'Your reset link is invalid or expired. Please request a new password reset link.'
+          )
+        } else {
+          setSessionValid(true)
+          setFeedback('')
+          setIsError(false)
+        }
+      } catch (error) {
+        console.error(
+          'Session verification error:',
+          error
+        )
+
+        if (!mounted) return
+
+        setSessionValid(false)
+        setIsError(true)
+        setFeedback(
+          'Unable to verify your reset link. Please request a new link.'
+        )
+      } finally {
+        if (mounted) {
+          setCheckingSession(false)
+        }
+      }
+    }
+
+    void checkSession()
+
+    // CLEANUP
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  // ========================================
+  // UPDATE PASSWORD
+  // ========================================
 
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>
@@ -24,9 +121,19 @@ function ResetPassword() {
     setFeedback('')
     setIsError(false)
 
+    if (!sessionValid) {
+      setIsError(true)
+      setFeedback(
+        'Your reset session has expired. Please request a new link.'
+      )
+      return
+    }
+
     if (password.length < 8) {
       setIsError(true)
-      setFeedback('Password must contain at least 8 characters.')
+      setFeedback(
+        'Password must contain at least 8 characters.'
+      )
       return
     }
 
@@ -47,15 +154,24 @@ function ResetPassword() {
         return
       }
 
-      // Sign out so the user can log in
-      // using the new password.
+      setFeedback(
+        'Password updated successfully! Please log in with your new password.'
+      )
+
+      setIsError(false)
+
       await signOut()
 
       navigate('/', {
         replace: true,
         state: { openLogin: true },
       })
-    } catch {
+    } catch (error) {
+      console.error(
+        'Password reset error:',
+        error
+      )
+
       setIsError(true)
       setFeedback(
         'Something went wrong. Please try again.'
@@ -65,9 +181,33 @@ function ResetPassword() {
     }
   }
 
+  // ========================================
+  // LOADING SCREEN
+  // ========================================
+
+  if (checkingSession) {
+    return (
+      <main className="reset-page">
+        <div className="reset-modal">
+          <h2>Verifying Reset Link...</h2>
+
+          <p className="reset-description">
+            Please wait while we verify your password
+            reset link.
+          </p>
+        </div>
+      </main>
+    )
+  }
+
+  // ========================================
+  // RESET PASSWORD FORM
+  // ========================================
+
   return (
     <main className="reset-page">
       <div className="reset-modal">
+
         <button
           className="reset-close"
           onClick={() => navigate('/')}
@@ -77,7 +217,9 @@ function ResetPassword() {
           ×
         </button>
 
-        <div className="reset-icon">✓</div>
+        <div className="reset-icon">
+          ✓
+        </div>
 
         <span className="reset-eyebrow">
           HABITTRACKER SECURITY
@@ -90,70 +232,97 @@ function ResetPassword() {
           HabitTracker account.
         </p>
 
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="new-password">
-            New Password
-          </label>
+        {sessionValid ? (
+          <form onSubmit={handleSubmit}>
 
-          <input
-            id="new-password"
-            type="password"
-            placeholder="Enter new password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            minLength={8}
-            required
-          />
+            <label htmlFor="new-password">
+              New Password
+            </label>
 
-          <label htmlFor="confirm-password">
-            Confirm Password
-          </label>
-
-          <input
-            id="confirm-password"
-            type="password"
-            placeholder="Confirm new password"
-            value={confirmPassword}
-            onChange={(e) =>
-              setConfirmPassword(e.target.value)
-            }
-            autoComplete="new-password"
-            minLength={8}
-            required
-          />
-
-          {feedback && (
-            <div
-              className={
-                isError
-                  ? 'reset-feedback error'
-                  : 'reset-feedback success'
+            <input
+              id="new-password"
+              type="password"
+              placeholder="Enter new password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
               }
+              autoComplete="new-password"
+              minLength={8}
+              required
+              disabled={loading}
+            />
+
+            <label htmlFor="confirm-password">
+              Confirm Password
+            </label>
+
+            <input
+              id="confirm-password"
+              type="password"
+              placeholder="Confirm new password"
+              value={confirmPassword}
+              onChange={(e) =>
+                setConfirmPassword(e.target.value)
+              }
+              autoComplete="new-password"
+              minLength={8}
+              required
+              disabled={loading}
+            />
+
+            {feedback && (
+              <div
+                className={
+                  isError
+                    ? 'reset-feedback error'
+                    : 'reset-feedback success'
+                }
+                role="alert"
+              >
+                {feedback}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="reset-submit"
+              disabled={loading}
+            >
+              {loading
+                ? 'Updating Password...'
+                : 'Reset Password'}
+            </button>
+
+          </form>
+        ) : (
+          <>
+            <div
+              className="reset-feedback error"
               role="alert"
             >
               {feedback}
             </div>
-          )}
 
+            <button
+              className="reset-submit"
+              onClick={() => navigate('/')}
+            >
+              Back to Login
+            </button>
+          </>
+        )}
+
+        {sessionValid && (
           <button
-            type="submit"
-            className="reset-submit"
+            className="reset-back"
+            onClick={() => navigate('/')}
             disabled={loading}
           >
-            {loading
-              ? 'Updating Password...'
-              : 'Reset Password'}
+            Back to Login
           </button>
-        </form>
+        )}
 
-        <button
-          className="reset-back"
-          onClick={() => navigate('/')}
-          disabled={loading}
-        >
-          Back to Login
-        </button>
       </div>
     </main>
   )

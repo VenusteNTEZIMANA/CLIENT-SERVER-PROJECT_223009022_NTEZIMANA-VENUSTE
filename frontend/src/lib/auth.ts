@@ -10,7 +10,7 @@ export interface AuthResult {
   }
 }
 
-const API_URL = import.meta.env.VITE_API_URL
+const API_URL = import.meta.env.VITE_API_URL?.replace(/\/+$/, '')
 
 // ========================================
 // SIGN UP
@@ -20,20 +20,16 @@ export async function signUp(
   email: string,
   password: string
 ): Promise<AuthResult> {
-
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: window.location.origin,
+      emailRedirectTo: `${window.location.origin}/`,
     },
   })
 
   if (error) {
-    return {
-      success: false,
-      message: error.message,
-    }
+    return { success: false, message: error.message }
   }
 
   if (!data.user) {
@@ -47,7 +43,7 @@ export async function signUp(
     return {
       success: true,
       message:
-        'Account created! Please check your email and confirm your account before logging in.',
+        'Account created! Please check your email and confirm your account.',
       user: {
         id: data.user.id,
         email: data.user.email,
@@ -55,9 +51,7 @@ export async function signUp(
     }
   }
 
-  return verifyWithDjango(
-    data.session.access_token
-  )
+  return verifyWithDjango(data.session.access_token)
 }
 
 // ========================================
@@ -68,7 +62,6 @@ export async function signIn(
   email: string,
   password: string
 ): Promise<AuthResult> {
-
   const { data, error } =
     await supabase.auth.signInWithPassword({
       email,
@@ -76,10 +69,7 @@ export async function signIn(
     })
 
   if (error) {
-    return {
-      success: false,
-      message: error.message,
-    }
+    return { success: false, message: error.message }
   }
 
   if (!data.session) {
@@ -115,6 +105,12 @@ export async function signIn(
 export async function verifyWithDjango(
   accessToken: string
 ): Promise<AuthResult> {
+  if (!API_URL) {
+    return {
+      success: false,
+      message: 'Django API URL is not configured.',
+    }
+  }
 
   try {
     const response = await fetch(
@@ -145,7 +141,6 @@ export async function verifyWithDjango(
       message: 'Authentication verified.',
       user: result.user,
     }
-
   } catch {
     return {
       success: false,
@@ -160,7 +155,6 @@ export async function verifyWithDjango(
 // ========================================
 
 export async function getCurrentUser(): Promise<AuthResult> {
-
   const {
     data: { session },
     error,
@@ -178,19 +172,19 @@ export async function getCurrentUser(): Promise<AuthResult> {
 
 // ========================================
 // FORGOT PASSWORD
-// SEND RESET LINK TO EMAIL
 // ========================================
 
 export async function requestPasswordReset(
   email: string
 ): Promise<AuthResult> {
+  const redirectUrl =
+    `${window.location.origin}/reset-password`
 
   const { error } =
     await supabase.auth.resetPasswordForEmail(
       email,
       {
-        redirectTo:
-          `${window.location.origin}/reset-password`,
+        redirectTo: redirectUrl,
       }
     )
 
@@ -209,12 +203,52 @@ export async function requestPasswordReset(
 }
 
 // ========================================
+// CHECK PASSWORD RESET SESSION
+// ========================================
+
+export async function getPasswordResetSession(): Promise<AuthResult> {
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession()
+
+  if (error || !session) {
+    return {
+      success: false,
+      message:
+        'Password reset session is invalid or expired. Please request a new reset link.',
+    }
+  }
+
+  return {
+    success: true,
+    message: 'Password reset session verified.',
+    user: {
+      id: session.user.id,
+      email: session.user.email,
+    },
+  }
+}
+
+// ========================================
 // UPDATE PASSWORD
 // ========================================
 
 export async function updatePassword(
   newPassword: string
 ): Promise<AuthResult> {
+  if (newPassword.length < 8) {
+    return {
+      success: false,
+      message: 'Password must contain at least 8 characters.',
+    }
+  }
+
+  const sessionCheck = await getPasswordResetSession()
+
+  if (!sessionCheck.success) {
+    return sessionCheck
+  }
 
   const { data, error } =
     await supabase.auth.updateUser({
@@ -243,7 +277,6 @@ export async function updatePassword(
 // ========================================
 
 export async function signOut(): Promise<void> {
-
   const { error } = await supabase.auth.signOut()
 
   if (error) {

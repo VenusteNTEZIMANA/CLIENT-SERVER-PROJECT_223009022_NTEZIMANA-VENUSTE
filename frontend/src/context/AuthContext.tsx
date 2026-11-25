@@ -16,6 +16,7 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
+  isPasswordRecovery: boolean
   logout: () => Promise<void>
 }
 
@@ -31,25 +32,39 @@ export function AuthProvider({
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isPasswordRecovery, setIsPasswordRecovery] =
+    useState(false)
 
   const requestId = useRef(0)
 
   useEffect(() => {
     let mounted = true
 
-    const verifySession = async (newSession: Session | null) => {
+    const verifySession = async (
+      newSession: Session | null,
+      isRecovery = false
+    ) => {
       const currentRequest = ++requestId.current
 
       if (!mounted) return
 
+      setSession(newSession)
+      setIsPasswordRecovery(isRecovery)
+
       if (!newSession) {
         setUser(null)
-        setSession(null)
         setLoading(false)
         return
       }
 
-      setSession(newSession)
+      // Recovery sessions must remain available
+      // for the password reset page.
+      if (isRecovery) {
+        setUser(null)
+        setLoading(false)
+        return
+      }
+
       setUser(null)
       setLoading(true)
 
@@ -93,23 +108,27 @@ export function AuthProvider({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        void verifySession(newSession)
+      (event, newSession) => {
+        void verifySession(
+          newSession,
+          event === 'PASSWORD_RECOVERY'
+        )
       }
     )
 
-    // Check existing session when application starts
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) return
+    void supabase.auth.getSession().then(
+      ({ data, error }) => {
+        if (!mounted) return
 
-      if (error) {
-        console.error('Session loading error:', error)
-        setLoading(false)
-        return
+        if (error) {
+          console.error('Session loading error:', error)
+          setLoading(false)
+          return
+        }
+
+        void verifySession(data.session)
       }
-
-      void verifySession(data.session)
-    })
+    )
 
     return () => {
       mounted = false
@@ -118,19 +137,17 @@ export function AuthProvider({
     }
   }, [])
 
-  // LOGOUT
   const logout = async () => {
     setLoading(true)
 
     try {
       const { error } = await supabase.auth.signOut()
 
-      if (error) {
-        throw error
-      }
+      if (error) throw error
 
       setUser(null)
       setSession(null)
+      setIsPasswordRecovery(false)
     } catch (error) {
       console.error('Logout failed:', error)
       throw error
@@ -145,6 +162,7 @@ export function AuthProvider({
         user,
         session,
         loading,
+        isPasswordRecovery,
         logout,
       }}
     >
@@ -153,7 +171,6 @@ export function AuthProvider({
   )
 }
 
-// CUSTOM AUTH HOOK
 export function useAuth() {
   const context = useContext(AuthContext)
 
