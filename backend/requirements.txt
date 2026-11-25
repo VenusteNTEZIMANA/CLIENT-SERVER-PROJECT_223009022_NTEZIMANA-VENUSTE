@@ -12,5 +12,4 @@ cffi==2.1.1
 pycparser==3.12
 sqlparse==0.6.1
 tzdata==2026.6
-giref=3.13.0
 gunicorn==23.0.0
