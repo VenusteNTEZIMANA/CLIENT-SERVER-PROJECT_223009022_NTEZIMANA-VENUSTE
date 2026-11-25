@@ -35,8 +35,15 @@ function ResetPassword() {
 
   useEffect(() => {
     let mounted = true
+    let recoveryDetected = false
 
-    // SUBSCRIBE TO AUTH EVENTS
+    const hashParams = new URLSearchParams(
+      window.location.hash.substring(1)
+    )
+
+    const isRecoveryLink =
+      hashParams.get('type') === 'recovery'
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
@@ -47,6 +54,7 @@ function ResetPassword() {
           event === 'PASSWORD_RECOVERY' &&
           session
         ) {
+          recoveryDetected = true
           setSessionValid(true)
           setFeedback('')
           setIsError(false)
@@ -59,7 +67,6 @@ function ResetPassword() {
       }
     )
 
-    // CHECK EXISTING SESSION
     const checkSession = async () => {
       try {
         const {
@@ -69,27 +76,30 @@ function ResetPassword() {
 
         if (!mounted) return
 
-        if (error || !session) {
-          setSessionValid(false)
-          setIsError(true)
-          setFeedback(
-            'Your reset link is invalid or expired. Please request a new password reset link.'
-          )
-        } else {
+        if (
+          !error &&
+          session &&
+          (isRecoveryLink || recoveryDetected)
+        ) {
           setSessionValid(true)
           setFeedback('')
           setIsError(false)
+        } else {
+          setSessionValid(false)
+          setIsError(true)
+
+          setFeedback(
+            'Your reset link is invalid or expired. Please request a new password reset link.'
+          )
         }
       } catch (error) {
-        console.error(
-          'Session verification error:',
-          error
-        )
+        console.error('Recovery verification error:', error)
 
         if (!mounted) return
 
         setSessionValid(false)
         setIsError(true)
+
         setFeedback(
           'Unable to verify your reset link. Please request a new link.'
         )
@@ -102,7 +112,6 @@ function ResetPassword() {
 
     void checkSession()
 
-    // CLEANUP
     return () => {
       mounted = false
       subscription.unsubscribe()
@@ -124,7 +133,7 @@ function ResetPassword() {
     if (!sessionValid) {
       setIsError(true)
       setFeedback(
-        'Your reset session has expired. Please request a new link.'
+        'Your reset session has expired. Request a new link.'
       )
       return
     }
@@ -155,7 +164,7 @@ function ResetPassword() {
       }
 
       setFeedback(
-        'Password updated successfully! Please log in with your new password.'
+        'Password updated successfully!'
       )
 
       setIsError(false)
@@ -166,11 +175,9 @@ function ResetPassword() {
         replace: true,
         state: { openLogin: true },
       })
+
     } catch (error) {
-      console.error(
-        'Password reset error:',
-        error
-      )
+      console.error('Password reset error:', error)
 
       setIsError(true)
       setFeedback(
@@ -182,7 +189,7 @@ function ResetPassword() {
   }
 
   // ========================================
-  // LOADING SCREEN
+  // LOADING
   // ========================================
 
   if (checkingSession) {
@@ -192,8 +199,7 @@ function ResetPassword() {
           <h2>Verifying Reset Link...</h2>
 
           <p className="reset-description">
-            Please wait while we verify your password
-            reset link.
+            Please wait while we verify your password reset link.
           </p>
         </div>
       </main>
@@ -201,7 +207,7 @@ function ResetPassword() {
   }
 
   // ========================================
-  // RESET PASSWORD FORM
+  // RESET PASSWORD PAGE
   // ========================================
 
   return (
@@ -311,16 +317,6 @@ function ResetPassword() {
               Back to Login
             </button>
           </>
-        )}
-
-        {sessionValid && (
-          <button
-            className="reset-back"
-            onClick={() => navigate('/')}
-            disabled={loading}
-          >
-            Back to Login
-          </button>
         )}
 
       </div>
