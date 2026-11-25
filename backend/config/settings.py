@@ -12,15 +12,15 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from backend/.env
-load_dotenv(BASE_DIR / ".env", override=True)
+# Local development .env; Render uses environment variables
+load_dotenv(BASE_DIR / ".env", override=False)
 
 
 # ==================================================
 # SECURITY
 # ==================================================
 
-DEBUG = os.getenv("DEBUG", "True").strip().lower() in (
+DEBUG = os.getenv("DEBUG", "False").strip().lower() in (
     "true", "1", "yes", "on"
 )
 
@@ -33,12 +33,16 @@ if not SECRET_KEY:
         raise ImproperlyConfigured("SECRET_KEY is required.")
 
 ALLOWED_HOSTS = [
-    h.strip()
-    for h in os.getenv(
-        "ALLOWED_HOSTS", "127.0.0.1,localhost"
+    host.strip()
+    for host in os.getenv(
+        "ALLOWED_HOSTS",
+        "127.0.0.1,localhost,.onrender.com"
     ).split(",")
-    if h.strip()
+    if host.strip()
 ]
+
+# Proxy configuration for Render
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 # ==================================================
@@ -67,10 +71,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-
-    # CORS must be near the top
     "corsheaders.middleware.CorsMiddleware",
-
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -90,6 +91,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+
+VERCEL_FRONTEND_URL = os.getenv(
+    "VERCEL_FRONTEND_URL", ""
+).strip().rstrip("/")
+
+if VERCEL_FRONTEND_URL:
+    CORS_ALLOWED_ORIGINS.append(VERCEL_FRONTEND_URL)
 
 CORS_ALLOW_CREDENTIALS = False
 
@@ -148,7 +156,8 @@ if not all([
     DATABASES["default"]["HOST"],
 ]):
     raise ImproperlyConfigured(
-        "Missing database configuration in .env"
+        "Missing database configuration. "
+        "Check DB_NAME, DB_USER, DB_PASSWORD and DB_HOST."
     )
 
 
